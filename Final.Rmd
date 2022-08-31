@@ -1,0 +1,395 @@
+---
+title: "The Relationship Between Social Factors and Crime Rates in Toronto: An Analysis"
+#subtitle: "A subtitle"
+thanks: "Paper submitted to complete the requirements of ENVSOCTY 4GA3 Applied Spatial Statistics; with additional edits by Antonio Paez for this version."
+author:
+- name: Yixin Yang
+  student_number: 400226742
+- name: Xiaosong Xie 
+  student_number: 400143076
+- name: Ling Cen
+  student_number: 400181569
+
+subject: "ENVSOCTY 4GA3"
+abstract: ""
+keywords: "spatial analysis"
+# Do not edit below this line unless you know what you are doing
+# --------------------------------------------------------------
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document:
+    # The project-template-default.tex file was heavily  adapted from Steven V. Miller's template for academic manuscripts. See:
+    # http://svmiller.com/blog/2016/02/svm-r-markdown-manuscript/
+    # https://github.com/svmiller/svm-r-markdown-templates/blob/master/svm-latex-ms.tex
+    template: reading-template-default.tex
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      out.width = "1\\linewidth")
+```
+
+
+<!--Chunks of code can have names; the chunk option "include" controls whether the chunk and its output are printed in the final document-->
+```{r}
+rm(list = ls())
+```
+
+```{r load-packages, include=FALSE}
+# install.packages("arcos") # Install if needed, but this needs to be done only once
+library(opendatatoronto)
+library(dplyr)
+library(tidyverse) # family of packages for data manipulation, analysis, and visualization (includes `ggplot2`)
+library(tigris) # package `tigris` which includes boundary and other geography files for the US:
+library(plotly) # package for interactive plotting
+library(viridis) #Viridis colour scheme for mapping
+library(isdas)
+library(sf)
+library(spdep)
+library(spatialreg)
+	
+# get package
+package <- show_package("4def3f65-2a65-4a4f-83c4-b2a4aed72d46")
+package
+# get all resources for this package
+resources <- list_package_resources("fc4d95a6-591f-411f-af17-327e6c5d03c7")
+# identify datastore resources; by default, Toronto Open Data sets datastore resource format to CSV for non-geospatial and GeoJSON for geospatial resources
+datastore_resources <- filter(resources, tolower(format) %in% c('csv', 'geojson'))
+# load the first datastore resource as a sample
+data <- filter(datastore_resources, row_number()==1) %>% get_resource()
+data
+
+```
+
+```{r write-package-bib, include=FALSE}
+# This function is used to write a bibliography for the `R` packages used in the paper
+knitr::write_bib(file = 'packages.bib')
+```
+
+```{r read-census-data, include=FALSE}
+```
+
+<!--This create a page break, i.e., starts a new page-->
+<!--\newpage-->
+
+<!-- 
+To cite references in your bibliography.bib file, use [@item] if you want it to be cited in brackets, or @item if you want it to be cited as Name (year). If you want to cite various items in brackets, separate them with semicolons [@item1; @item2]
+-->
+
+<!--Use "#" for section headers-->
+# Introduction
+```{r}
+ggplot() +
+  geom_sf(data = data,
+          color = "white", 
+          fill = "gray") + 
+  theme_void()+
+  theme(panel.grid.major = element_line(colour = 'transparent'))
+```
+#auto theft, break and enter, robbery, theft over
+```{r}
+data <- mutate(data, 
+Property_2014 = (AutoTheft_Rate2014 + BreakAndEnter_Rate2014 + Robbery_Rate2014+ TheftOver_Rate2014),
+Property_2015 = (AutoTheft_Rate2015 + BreakAndEnter_Rate2015 + RobberyRate_2015+ TheftOver_Rate2015),
+Property_2016 = (AutoTheft_Rate2016 + BreakAndEnter_Rate2016 + Robbery_Rate2016+ TheftOver_Rate2016),
+Property_2017 = (AutoTheft_Rate2017 + BreakAndEnter_Rate2017 + Robbery_Rate2017+ TheftOver_Rate2017),
+Property_2018 = (AutoTheft_Rate2018 + BreakAndEnter_Rate2018 + Robbery_Rate2018+ TheftOver_Rate2018),
+Property_2019 = (AutoTheft_Rate2019 + BreakAndEnter_Rate2019 + Robbery_Rate2019+ TheftOver_Rate2019),
+Property_2020 = (AutoTheft_Rate2020 + BreakAndEnter_Rate2020 + Robbery_Rate2020+ TheftOver_Rate2020),
+MeanProperty = (Property_2014+ Property_2015+ Property_2016+Property_2017+Property_2018+Property_2019+Property_2020)/7)
+data1 <- data
+data1 <- pivot_longer(data, cols=Property_2014:Property_2020, names_to = "Year", values_to = "Crime_Rate")
+```
+
+```{r}
+ggplot(data1) + 
+  geom_sf(aes(fill = cut_number((Crime_Rate), 5)),
+          color = NA, 
+          size = 0.1) +
+  scale_fill_brewer(palette = "YlGnBu") +
+  coord_sf() +
+  labs(fill = "Crime_Rate") +
+  facet_wrap (~ Year, ncol =2)
+```
+
+```{r}
+ggplot(data) + 
+  geom_sf(aes(fill = cut_number((data$MeanProperty), 5)),
+          color = NA, 
+          size = 0.1) +
+  scale_fill_brewer(palette = "YlGnBu") +
+  coord_sf() +
+  labs(fill = "Mean Property crime from 2014- 2020")
+
+```
+
+```{r}
+data.nb <- poly2nb(pl = data)
+data.w <- data  %>% 
+  as("Spatial") %>% 
+  poly2nb() %>%
+  nb2listw()
+```
+
+```{r}
+data <- data %>%
+  mutate(sma = lag.listw(data.w, MeanProperty))
+```
+
+```{r}
+
+Property_s1 <- sample(data$MeanProperty)
+Property_s1.sma <- lag.listw(data.w, Property_s1)
+
+Property_s2 <- sample(data$MeanProperty)
+Property_s2.sma <- lag.listw(data.w, Property_s2)
+
+Property_s3 <- sample(data$MeanProperty)
+Property_s3.sma <- lag.listw(data.w, Property_s3)
+
+Property_s4 <- sample(data$MeanProperty)
+Property_s4.sma <- lag.listw(data.w, Property_s4)
+
+Property_s5 <- sample(data$MeanProperty)
+Property_s5.sma <- lag.listw(data.w, Property_s5)
+
+Property_s6 <- sample(data$MeanProperty)
+Property_s6.sma <- lag.listw(data.w, Property_s6)
+```
+
+```{r add-simulated-landscapes, include=FALSE}
+#Add simulated landscapes to sf dataframe
+data$Property_s1 <- Property_s1
+data$Property_s2 <- Property_s2
+data$Property_s3 <- Property_s3
+data$Property_s4 <- Property_s4
+data$Property_s5 <- Property_s5
+data$Property_s6 <- Property_s6
+#Add spatial moving averages to sf dataframe
+data$Property_s1.sma <- Property_s1.sma
+data$Property_s2.sma <- Property_s2.sma
+data$Property_s3.sma <- Property_s3.sma
+data$Property_s4.sma <- Property_s4.sma
+data$Property_s5.sma <- Property_s5.sma
+data$Property_s6.sma <- Property_s6.sma
+```
+
+
+```{r gather-simulated-landscapes, include=FALSE}
+data2<- data %>%
+  
+  transmute(observed =MeanProperty,
+         Property_s1,
+         Property_s2,
+         Property_s3,
+         Property_s4,
+         Property_s5,
+         Property_s6,
+         geometry) %>%
+   pivot_longer(cols = -c(geometry, ends_with("sma")), names_to = "VAR", values_to = "values") %>%
+  st_as_sf()
+```
+         
+
+
+
+
+
+```{r}
+ggplot() + 
+  geom_sf(data = data2, 
+          aes(fill = cut_number ((values),5)), color = NA) + 
+    facet_wrap(~VAR, ncol = 3) +
+  scale_fill_brewer(palette = "YlGnBu") +
+  coord_sf() +
+  labs(fill = "Mean crime per SMA")
+```
+```{r gather-moving-averages-2, echo=FALSE}
+data2 <- data2 %>% 
+  data.frame(data %>% 
+               st_drop_geometry() %>% # Drop the geometry because it is already available 
+               # Select the original population density and the 5 null landscapes simulated from it.
+               transmute(sma,
+                      Property_s1.sma,
+                      Property_s2.sma,
+                      Property_s3.sma,
+                      Property_s4.sma,
+                      Property_s5.sma,
+                      Property_s6.sma,
+               ) %>% # Pass the result to `pivot_longer()`  
+               pivot_longer(cols = everything(), names_to = "VAR", values_to = "SMA") %>% # Copy all density variables to a single column, and create a new variable called `VAR` with the names of the original columns 
+               select(SMA)) # Drop VAR from the the dataframe
+```
+
+```{r spatial-moving-averages, echo=FALSE, fig.cap={"\\label{fig:scatterplot-moving-averages}Moran's scatterplots of empirical and simulated spatial moving averages of mean annual opioid pills per person"}}
+ggplot(data = data2, 
+       aes(x = values, 
+           y = SMA,
+           color = VAR)) +
+  geom_point(alpha = 0.1) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  # Add a fitted line to the plots
+  geom_smooth(formula = y ~ x,
+              method = "lm") +
+  coord_equal() +
+  xlab("Pills per person") +
+  ylab("Spatial lag of pills per person") +
+  facet_wrap(~ VAR, ncol = 3)
+```
+
+
+
+```{r}
+mp <- moran.plot(data$MeanProperty, data.w)
+moran.test(data$MeanProperty,data.w)
+```
+```{r}
+mp <- moran.plot(data$MeanProperty, data.w)
+moran.test(data$MeanProperty,data.w)
+```
+```{r}
+localmoran.map <- function(p, listw, VAR, by){
+  # p is a simple features object
+  require(tidyverse)
+  require(spdep)
+  require(plotly)
+  
+  df_msc <- p %>% 
+    rename(VAR = as.name(VAR),
+              key = as.name(by)) %>%
+    transmute(key,
+              VAR,
+              Z = (VAR - mean(VAR)) / var(VAR),
+              SMA = lag.listw(listw, Z),
+              Type = case_when(Z < 0 & SMA < 0 ~ "LL",
+                               Z > 0 & SMA > 0 ~ "HH",
+                               TRUE ~ "HL/LH"))
+  
+  local_I <- localmoran(df_msc$VAR, listw)
+  
+  colnames(local_I) <- c("Ii", "E.Ii", "Var.Ii", "Z.Ii", "p.val")
+  
+  df_msc <- left_join(df_msc, 
+                      data.frame(key = df_msc$key, 
+                                 local_I),
+                      by = "key")
+  
+  plot_ly(df_msc) %>%
+    add_sf(type = "scatter",
+           split = ~(p.val < 0.05), 
+           color = ~Type, 
+           colors = c("red", 
+                      "khaki1",
+                      "dodgerblue", 
+                      "dodgerblue4")) 
+}
+
+localmoran.map(data, data.w, 
+               "MeanProperty", 
+               by = "Neighbourhood")
+```
+
+
+```{r}
+library(readxl)
+wellbeing_toronto <- read_excel("wellbeing_toronto.xlsx")
+
+data3 <- merge(data,wellbeing_toronto,by="Hood_ID")
+
+data3 <- mutate(data3,
+                low_income_rate = data3$`Low Income Population`*1000/data3$`Total Population`,
+                college_rate = data3$`With College Certificate/Diploma`*1000/data3$`Total Population`,
+                umemployment_rate = data3$Unemployed*1000/data3$ `Total Population`)
+data3.w <- data3 %>%
+  as("Spatial") %>%
+  poly2nb() %>%
+  nb2listw()
+```
+
+```{r}
+ggplot(data3) + 
+  geom_sf(aes(fill = cut_number((data3$low_income_rate), 5)),
+          color = NA, 
+          size = 0.1) +
+  scale_fill_brewer(palette = "YlOrRd") +
+  coord_sf() +
+  labs(fill = "Low income population rate")
+```
+```{r}
+model1 <- lm(formula = MeanProperty ~ low_income_rate, data = data3)
+ggplot(data = data3, aes(x = low_income_rate, 
+                               y = MeanProperty)) + 
+  geom_point() +
+  geom_abline(slope = model1$coefficients[2], 
+              intercept = model1$coefficients[1], 
+              color = "blue", size = 1) +
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0)
+```
+```{r}
+model.sem1 <- errorsarlm(formula = MeanProperty ~ low_income_rate, 
+                        data = data3, 
+                        listw = data3.w)
+summary(model.sem1)
+moran.test(model.sem1$residuals, data3.w, alternative = "less")
+```
+
+```{r}
+ggplot(data3) + 
+  geom_sf(aes(fill = cut_number((data3$college_rate), 5)),
+          color = NA, 
+          size = 0.1) +
+  scale_fill_brewer(palette = "YlOrRd") +
+  coord_sf() +
+  labs(fill = "College population rate")
+```
+
+```{r}
+model2 <- lm(formula = MeanProperty ~ college_rate, data = data3)
+ggplot(data = data3, aes(x = college_rate, 
+                               y = MeanProperty)) + 
+  geom_point() +
+  geom_abline(slope = model1$coefficients[2], 
+              intercept = model1$coefficients[1], 
+              color = "blue", size = 1) +
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0)
+```
+```{r}
+model.sem2 <- errorsarlm(formula = MeanProperty ~ college_rate, 
+                        data = data3, 
+                        listw = data3.w)
+summary(model.sem2)
+moran.test(model.sem2$residuals, data3.w, alternative = "less")
+```
+
+```{r}
+ggplot(data3) + 
+  geom_sf(aes(fill = cut_number((data3$umemployment_rate), 5)),
+          color = NA, 
+          size = 0.1) +
+  scale_fill_brewer(palette = "YlOrRd") +
+  coord_sf() +
+  labs(fill = "enemployment population rate")
+```
+
+```{r}
+model3 <- lm(formula = MeanProperty ~ umemployment_rate , data = data3)
+ggplot(data = data3, aes(x = umemployment_rate, 
+                               y = MeanProperty)) + 
+  geom_point() +
+  geom_abline(slope = model1$coefficients[2], 
+              intercept = model1$coefficients[1], 
+              color = "blue", size = 1) +
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0)
+```
+```{r}
+model.sem3 <- errorsarlm(formula = MeanProperty ~ umemployment_rate, 
+                        data = data3, 
+                        listw = data3.w)
+summary(model.sem3)
+moran.test(model.sem3$residuals, data3.w, alternative = "less")
+
+```
